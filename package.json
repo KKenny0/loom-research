@@ -1,10 +1,10 @@
 {
   "name": "loom-research",
-  "version": "0.1.0",
-  "description": "Source-grounded research quality tool",
+  "version": "0.2.0",
+  "description": "Source-grounded comparison and verification tool",
   "type": "module",
   "bin": {
-    "loom-research": "dist/cli.js"
+    "loom": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

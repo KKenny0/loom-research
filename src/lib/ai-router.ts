@@ -5,10 +5,17 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import OpenAI from 'openai';
 
+export type BackendType = 'claude-cli' | 'codex-cli' | 'byok-api';
+
 export interface AIResponse {
   content: string;
   model: string;
-  backend: 'claude-cli' | 'codex-cli' | 'byok-api';
+  backend: BackendType;
+}
+
+export interface RouterOptions {
+  /** If true, inject source discovery instructions for CLI backends */
+  autoSource?: boolean;
 }
 
 /**
@@ -54,28 +61,35 @@ function spawnCLI(
 }
 
 // --- Claude CLI ---
-// Claude Code auto-loads CLAUDE.md from the working directory.
-// We write the full prompt + sources into CLAUDE.md to avoid
-// Windows command-line length limits on the -p argument.
 
-function spawnClaudeCLI(prompt: string, sources: Array<{ id: string; content: string }>): AIResponse {
-  const workDir = join(tmpdir(), `loom-research-${randomUUID()}`);
+function spawnClaudeCLI(
+  prompt: string,
+  sources: Array<{ id: string; content: string }>,
+  autoSource?: boolean,
+): AIResponse {
+  const workDir = join(tmpdir(), `loom-${randomUUID()}`);
   mkdirSync(workDir, { recursive: true });
 
   try {
     // Write full prompt content into CLAUDE.md (auto-loaded by Claude Code)
-    const sourceBlocks = sources
-      .map((s) => `## ${s.id}\n${s.content || '[No content extracted]'}`)
-      .join('\n\n---\n\n');
+    const sourceBlocks = sources.length > 0
+      ? sources.map((s) => `## ${s.id}\n${s.content || '[No content extracted]'}`).join('\n\n---\n\n')
+      : '';
 
-    const claudeMd = `${prompt}\n\n# Sources\n\n${sourceBlocks}`;
+    const claudeMd = sourceBlocks
+      ? `${prompt}\n\n# Sources\n\n${sourceBlocks}`
+      : prompt;
+
     writeFileSync(join(workDir, 'CLAUDE.md'), claudeMd, 'utf-8');
+
+    // For auto-source mode, allow web search tool
+    const allowedTools = autoSource ? 'WebSearch,WebFetch' : 'none';
 
     // Keep -p argument short — the model will read CLAUDE.md automatically
     const exePath = resolveCmd('claude') || 'claude';
     const content = spawnCLI(exePath, [
-      '-p', 'Read CLAUDE.md for the full research task with quality rules and sources. Produce the research report as specified.',
-      '--allowedTools', 'none',
+      '-p', 'Read CLAUDE.md for the full task with quality rules and sources. Produce the output as specified.',
+      '--allowedTools', allowedTools,
     ], workDir, 300_000);
 
     return { content, model: 'claude', backend: 'claude-cli' };
@@ -86,14 +100,19 @@ function spawnClaudeCLI(prompt: string, sources: Array<{ id: string; content: st
 
 // --- Codex CLI ---
 
-function spawnCodexCLI(prompt: string, sources: Array<{ id: string; content: string }>): AIResponse {
-  const workDir = join(tmpdir(), `loom-research-${randomUUID()}`);
+function spawnCodexCLI(
+  prompt: string,
+  sources: Array<{ id: string; content: string }>,
+): AIResponse {
+  const workDir = join(tmpdir(), `loom-${randomUUID()}`);
   mkdirSync(workDir, { recursive: true });
-  mkdirSync(join(workDir, 'sources'), { recursive: true });
 
   try {
-    for (const s of sources) {
-      writeFileSync(join(workDir, 'sources', `${s.id}.md`), s.content || '[No content extracted]', 'utf-8');
+    if (sources.length > 0) {
+      mkdirSync(join(workDir, 'sources'), { recursive: true });
+      for (const s of sources) {
+        writeFileSync(join(workDir, 'sources', `${s.id}.md`), s.content || '[No content extracted]', 'utf-8');
+      }
     }
 
     const outputFile = join(workDir, 'output.md');
@@ -124,7 +143,7 @@ async function callByokAPI(prompt: string): Promise<AIResponse> {
     throw new Error(
       'No AI backend available.\n' +
       'Install Claude CLI (claude) or Codex CLI (codex), or configure an API key:\n' +
-      '  loom-research config set apiKey <your-key>\n' +
+      '  loom config set apiKey <your-key>\n' +
       'Optional: apiBase (default: https://api.openai.com/v1), model (default: gpt-4o).',
     );
   }
@@ -147,23 +166,38 @@ async function callByokAPI(prompt: string): Promise<AIResponse> {
   };
 }
 
+// --- Backend detection ---
+
+function detectCLIBackend(): BackendType | null {
+  if (resolveCmd('claude')) return 'claude-cli';
+  if (resolveCmd('codex')) return 'codex-cli';
+  return null;
+}
+
 // --- Main router ---
 
 export async function routeToAI(
   prompt: string,
   sources: Array<{ id: string; content: string }>,
+  options?: RouterOptions,
 ): Promise<AIResponse> {
-  // Detection order: claude CLI → codex CLI → BYOK API
-  if (resolveCmd('claude')) {
+  const cliBackend = detectCLIBackend();
+
+  if (cliBackend === 'claude-cli') {
     console.log('Using Claude CLI backend...');
-    return spawnClaudeCLI(prompt, sources);
+    return spawnClaudeCLI(prompt, sources, options?.autoSource);
   }
 
-  if (resolveCmd('codex')) {
+  if (cliBackend === 'codex-cli') {
     console.log('Using Codex CLI backend...');
     return spawnCodexCLI(prompt, sources);
   }
 
   console.log('No CLI detected, using BYOK API...');
   return callByokAPI(prompt);
+}
+
+/** Check if any CLI backend is available (without routing) */
+export function hasCLIBackend(): boolean {
+  return detectCLIBackend() !== null;
 }

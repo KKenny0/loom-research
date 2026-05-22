@@ -58,3 +58,48 @@ export const OUTPUT_TEMPLATE: string = `## Research Report: {{TOPIC}}
 - Inferences marked: [count]
 - Conflicts documented: [count]
 `;
+
+export const COMPARE_OUTPUT_TEMPLATE: string = `## Comparison: {{TOPIC}}
+
+### Agreement (N)
+- [Strong] Claim [S1, S2]
+- [Moderate] Claim [S3]
+
+### Disagreement (N)
+- [Contested] Topic: S1 says X, S2 says Y
+
+### Gaps (N)
+- [待验证] Claim — reason for uncertainty
+
+### Bottom Line
+One actionable sentence.
+
+Evidence: N sources, M verified claims, K unverified claims
+
+---
+
+## Research Report: {{TOPIC}}
+
+### Summary
+[One paragraph]
+
+### Findings
+#### Finding 1: [Title]
+[Content with S1, S2 references]
+[Evidence weight: [Strong/Moderate/Weak/Contested]]
+
+### Conflicts & Disagreements
+[Who says what, with source references]
+
+### Inferences vs Source Claims
+[来源说: ... vs 我推断: ...]
+
+### Confidence & Caveats
+[Evidence quality assessment and gaps]
+
+### Compliance Check
+- Claims with sources: [count]
+- Unverified claims [待验证]: [count]
+- Inferences marked: [count]
+- Conflicts documented: [count]
+`;
